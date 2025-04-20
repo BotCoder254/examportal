@@ -12,6 +12,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import StudentDashboard from './pages/student/Dashboard';
 import TeacherDashboard from './pages/teacher/Dashboard';
 import CreateExam from './pages/teacher/CreateExam';
+import ExamList from './pages/teacher/ExamList';
 import TakeExam from './pages/student/TakeExam';
 import MyResults from './pages/student/MyResults';
 import ViewSubmissions from './pages/teacher/ViewSubmissions';
@@ -21,10 +22,14 @@ import Analytics from './pages/student/Analytics';
 import QuestionPool from './pages/teacher/QuestionPool';
 import JoinExam from './pages/student/JoinExam';
 import TeacherAnalytics from './pages/teacher/TeacherAnalytics';
+import QuestionAnalytics from './pages/teacher/QuestionAnalytics';
+import StudentExamHistory from './pages/student/ExamHistory';
+import TeacherExamHistory from './pages/teacher/ExamHistory';
 
 // Components
 import Navbar from './components/layout/Navbar';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import Sidebar from './components/layout/Sidebar';
 
 const App = () => {
   const [user, setUser] = React.useState(null);
@@ -141,10 +146,34 @@ const App = () => {
 
           {/* Teacher Routes */}
           <Route
+            path="/teacher/dashboard"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <TeacherDashboard /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/create-exam"
             element={
               <ProtectedRoute user={user}>
                 {user?.role === 'teacher' ? <CreateExam /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exam/:examId/edit"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <CreateExam /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exam/:examId/analytics"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <QuestionAnalytics /> : <Navigate to="/dashboard" />}
               </ProtectedRoute>
             }
           />
@@ -190,6 +219,14 @@ const App = () => {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/join-exam"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'student' ? <JoinExam /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
 
           {/* Settings Route */}
           <Route
@@ -202,6 +239,34 @@ const App = () => {
                     <p className="mt-4 text-gray-600">Settings page coming soon...</p>
                   </div>
                 </div>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Teacher Routes */}
+          <Route
+            path="/exam-list"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <ExamList /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/exam-history"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <TeacherExamHistory /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/student-exam-history"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'student' ? <StudentExamHistory /> : <Navigate to="/dashboard" />}
               </ProtectedRoute>
             }
           />

@@ -18,7 +18,10 @@ import {
   FaChartLine,
   FaQuestionCircle,
   FaSearch,
-  FaGraduationCap
+  FaGraduationCap,
+  FaList,
+  FaHistory,
+  FaUserCog
 } from 'react-icons/fa';
 import { auth } from '../../config/firebase';
 
@@ -29,11 +32,13 @@ const Sidebar = ({ role }) => {
   const teacherMenuItems = [
     { icon: FaChalkboardTeacher, label: 'Dashboard', path: '/dashboard' },
     { icon: FaPlus, label: 'Create Exam', path: '/create-exam' },
+    { icon: FaList, label: 'Exam List', path: '/exam-list' },
     { icon: FaEye, label: 'View Submissions', path: '/view-submissions' },
     { icon: FaQuestionCircle, label: 'Question Pool', path: '/question-pool' },
     { icon: FaFlag, label: 'Flagged Questions', path: '/flagged-questions' },
     { icon: FaChartBar, label: 'Analytics', path: '/teacher-analytics' },
-    { icon: FaCog, label: 'Settings', path: '/settings' },
+    { icon: FaHistory, label: 'Exam History', path: '/exam-history' },
+    { icon: FaUserCog, label: 'Settings', path: '/settings' },
   ];
 
   const studentMenuItems = [
@@ -42,8 +47,9 @@ const Sidebar = ({ role }) => {
     { icon: FaChartBar, label: 'My Results', path: '/my-results' },
     { icon: FaBookmark, label: 'Bookmarked Questions', path: '/bookmarked' },
     { icon: FaChartLine, label: 'Analytics', path: '/analytics' },
-    { icon: FaSearch, label: 'Join Exam', path: '/join-exam' },
-    { icon: FaCog, label: 'Settings', path: '/settings' },
+    { icon: FaSearch, label: 'Join Exam', path: '/join-exam/public' },
+    { icon: FaHistory, label: 'Exam History', path: '/student-exam-history' },
+    { icon: FaUserCog, label: 'Settings', path: '/settings' },
   ];
 
   const menuItems = role === 'teacher' ? teacherMenuItems : studentMenuItems;

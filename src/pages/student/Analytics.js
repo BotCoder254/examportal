@@ -61,7 +61,8 @@ const Analytics = () => {
         // Process data for charts
         const processedSubmissions = submissions.map(submission => ({
           ...submission,
-          exam: examsData[submission.examId]
+          exam: examsData[submission.examId],
+          score: submission.score || 0 // Ensure score is never undefined
         })).filter(sub => sub.exam); // Filter out submissions with no exam data
 
         // Performance over time
@@ -69,8 +70,8 @@ const Analytics = () => {
           .sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt))
           .map(sub => ({
             date: new Date(sub.submittedAt).toLocaleDateString(),
-            score: sub.score,
-            examTitle: sub.exam.title
+            score: sub.score || 0,
+            examTitle: sub.exam.title || 'Untitled'
           }));
 
         // Category performance
@@ -84,13 +85,13 @@ const Analytics = () => {
               count: 0
             };
           }
-          categoryData[category].totalScore += sub.score;
+          categoryData[category].totalScore += (sub.score || 0);
           categoryData[category].count += 1;
         });
 
         const categoryPerformance = Object.values(categoryData).map(cat => ({
           category: cat.category,
-          averageScore: Math.round(cat.totalScore / cat.count)
+          averageScore: cat.count > 0 ? Math.round(cat.totalScore / cat.count) : 0
         }));
 
         // Difficulty distribution
@@ -105,13 +106,13 @@ const Analytics = () => {
             };
           }
           difficultyData[difficulty].count += 1;
-          difficultyData[difficulty].totalScore += sub.score;
+          difficultyData[difficulty].totalScore += (sub.score || 0);
         });
 
         const difficultyDistribution = Object.values(difficultyData).map(diff => ({
           difficulty: diff.difficulty,
           count: diff.count,
-          averageScore: Math.round(diff.totalScore / diff.count)
+          averageScore: diff.count > 0 ? Math.round(diff.totalScore / diff.count) : 0
         }));
 
         // Recent scores (last 5 exams)
@@ -119,9 +120,9 @@ const Analytics = () => {
           .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
           .slice(0, 5)
           .map(sub => ({
-            name: sub.exam.title,
-            score: sub.score,
-            passingScore: sub.exam.passingScore
+            name: sub.exam.title || 'Untitled',
+            score: sub.score || 0,
+            passingScore: sub.exam.passingScore || 60
           }));
 
         setAnalyticsData({
@@ -145,11 +146,13 @@ const Analytics = () => {
     const submissions = analyticsData.submissions;
     if (!submissions.length) return null;
 
-    const scores = submissions.map(s => s.score);
+    const scores = submissions.map(s => s.score || 0).filter(score => !isNaN(score));
+    if (scores.length === 0) return null;
+
     return {
-      averageScore: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
-      highestScore: Math.max(...scores),
-      lowestScore: Math.min(...scores),
+      averageScore: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) || 0,
+      highestScore: Math.max(...scores) || 0,
+      lowestScore: Math.min(...scores) || 0,
       totalExams: scores.length
     };
   };
