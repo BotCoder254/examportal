@@ -15,7 +15,8 @@ import {
   FaEye,
   FaBookmark,
   FaFlag,
-  FaChartLine
+  FaChartLine,
+  FaQuestionCircle
 } from 'react-icons/fa';
 import { auth } from '../../config/firebase';
 
@@ -27,6 +28,7 @@ const Sidebar = ({ role }) => {
     { icon: FaChalkboardTeacher, label: 'Dashboard', path: '/dashboard' },
     { icon: FaPlus, label: 'Create Exam', path: '/create-exam' },
     { icon: FaEye, label: 'View Submissions', path: '/view-submissions' },
+    { icon: FaQuestionCircle, label: 'Question Pool', path: '/question-pool' },
     { icon: FaFlag, label: 'Flagged Questions', path: '/flagged-questions' },
     { icon: FaCog, label: 'Settings', path: '/settings' },
   ];

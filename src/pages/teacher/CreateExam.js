@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { FaPlus, FaTrash, FaClock, FaImage, FaInfoCircle } from 'react-icons/fa';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { FaPlus, FaTrash, FaClock, FaImage, FaInfoCircle, FaTimes, FaQuestionCircle } from 'react-icons/fa';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, increment, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
 import Sidebar from '../../components/layout/Sidebar';
 import { Toaster, toast } from 'react-hot-toast';
@@ -23,6 +23,12 @@ const CreateExam = () => {
     allowReattempts: false,
     questions: []
   });
+  const [showQuestionPoolModal, setShowQuestionPoolModal] = useState(false);
+  const [poolQuestions, setPoolQuestions] = useState([]);
+  const [selectedPoolQuestions, setSelectedPoolQuestions] = useState([]);
+  const [loadingPool, setLoadingPool] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
 
   const categories = [
     'general',
@@ -194,6 +200,227 @@ const CreateExam = () => {
       setLoading(false);
     }
   };
+
+  const fetchQuestionPool = async () => {
+    setLoadingPool(true);
+    try {
+      const poolQuery = query(
+        collection(db, 'questionPool'),
+        where('teacherId', '==', auth.currentUser.uid)
+      );
+      const snapshot = await getDocs(poolQuery);
+      const questions = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPoolQuestions(questions);
+    } catch (error) {
+      console.error('Error fetching question pool:', error);
+      toast.error('Failed to load question pool');
+    } finally {
+      setLoadingPool(false);
+    }
+  };
+
+  const handleImportQuestions = () => {
+    const importedQuestions = selectedPoolQuestions.map(q => ({
+      question: q.questionText,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      points: 1,
+      category: q.category,
+      difficulty: q.difficulty
+    }));
+
+    setExamData(prev => ({
+      ...prev,
+      questions: [...prev.questions, ...importedQuestions]
+    }));
+
+    // Update usage count for imported questions
+    selectedPoolQuestions.forEach(async (q) => {
+      try {
+        const questionRef = doc(db, 'questionPool', q.id);
+        await updateDoc(questionRef, {
+          timesUsed: (q.timesUsed || 0) + 1
+        });
+      } catch (error) {
+        console.error('Error updating question usage:', error);
+      }
+    });
+
+    setSelectedPoolQuestions([]);
+    setShowQuestionPoolModal(false);
+    toast.success('Questions imported successfully');
+  };
+
+  const toggleQuestionSelection = (question) => {
+    setSelectedPoolQuestions(prev => {
+      const isSelected = prev.some(q => q.id === question.id);
+      if (isSelected) {
+        return prev.filter(q => q.id !== question.id);
+      } else {
+        return [...prev, question];
+      }
+    });
+  };
+
+  const filteredPoolQuestions = poolQuestions.filter(question => {
+    const matchesSearch = question.questionText.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = filterCategory === 'all' || question.category === filterCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const renderQuestionPoolButton = () => (
+    <button
+      onClick={() => {
+        setShowQuestionPoolModal(true);
+        fetchQuestionPool();
+      }}
+      className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition"
+    >
+      <FaQuestionCircle className="mr-2" />
+      Import from Pool
+    </button>
+  );
+
+  const renderQuestionPoolModal = () => (
+    <AnimatePresence>
+      {showQuestionPoolModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowQuestionPoolModal(false);
+              setSelectedPoolQuestions([]);
+            }
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.95 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0.95 }}
+            className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Import Questions from Pool</h2>
+              <button
+                onClick={() => {
+                  setShowQuestionPoolModal(false);
+                  setSelectedPoolQuestions([]);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            <div className="mb-6 flex flex-wrap gap-4">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="Search questions..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="all">All Categories</option>
+                {[...new Set(poolQuestions.map(q => q.category))].map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+
+            {loadingPool ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
+              </div>
+            ) : filteredPoolQuestions.length === 0 ? (
+              <p className="text-center text-gray-600 py-8">No questions found in your pool.</p>
+            ) : (
+              <div className="space-y-4 mb-6">
+                {filteredPoolQuestions.map((question) => (
+                  <div
+                    key={question.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                      selectedPoolQuestions.some(q => q.id === question.id)
+                        ? 'border-primary-500 bg-primary-50'
+                        : 'border-gray-200 hover:border-primary-300'
+                    }`}
+                    onClick={() => toggleQuestionSelection(question)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-gray-900">{question.questionText}</p>
+                        <div className="mt-2 space-y-1">
+                          {question.options.map((option, index) => (
+                            <p
+                              key={index}
+                              className={`text-sm ${
+                                index === question.correctAnswer ? 'text-green-600 font-medium' : 'text-gray-600'
+                              }`}
+                            >
+                              {index + 1}. {option}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end space-y-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          question.difficulty === 'Easy' ? 'bg-green-100 text-green-800' :
+                          question.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {question.difficulty}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Used {question.timesUsed || 0} times
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-4 border-t">
+              <span className="text-sm text-gray-600">
+                {selectedPoolQuestions.length} questions selected
+              </span>
+              <div className="space-x-4">
+                <button
+                  onClick={() => {
+                    setShowQuestionPoolModal(false);
+                    setSelectedPoolQuestions([]);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportQuestions}
+                  disabled={selectedPoolQuestions.length === 0}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Import Selected
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -513,14 +740,19 @@ const CreateExam = () => {
                 </motion.div>
               ))}
 
-              <button
-                type="button"
-                onClick={addQuestion}
-                className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors duration-200"
-              >
-                <FaPlus className="inline-block mr-2" />
-                Add Question
-              </button>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Questions</h2>
+                <div className="flex space-x-4">
+                  {renderQuestionPoolButton()}
+                  <button
+                    onClick={addQuestion}
+                    className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition"
+                  >
+                    <FaPlus className="mr-2" />
+                    Add Question
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end space-x-4">
@@ -535,6 +767,8 @@ const CreateExam = () => {
           </form>
         </div>
       </motion.div>
+
+      {renderQuestionPoolModal()}
     </div>
   );
 };

@@ -18,6 +18,7 @@ import ViewSubmissions from './pages/teacher/ViewSubmissions';
 import BookmarkedExams from './pages/student/BookmarkedExams';
 import FlaggedQuestions from './pages/teacher/FlaggedQuestions';
 import Analytics from './pages/student/Analytics';
+import QuestionPool from './pages/teacher/QuestionPool';
 
 // Components
 import Navbar from './components/layout/Navbar';
@@ -158,6 +159,14 @@ const App = () => {
             element={
               <ProtectedRoute user={user}>
                 {user?.role === 'teacher' ? <FlaggedQuestions /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/question-pool"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <QuestionPool /> : <Navigate to="/dashboard" />}
               </ProtectedRoute>
             }
           />
