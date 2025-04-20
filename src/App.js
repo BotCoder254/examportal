@@ -19,6 +19,8 @@ import BookmarkedExams from './pages/student/BookmarkedExams';
 import FlaggedQuestions from './pages/teacher/FlaggedQuestions';
 import Analytics from './pages/student/Analytics';
 import QuestionPool from './pages/teacher/QuestionPool';
+import JoinExam from './pages/student/JoinExam';
+import TeacherAnalytics from './pages/teacher/TeacherAnalytics';
 
 // Components
 import Navbar from './components/layout/Navbar';
@@ -167,6 +169,24 @@ const App = () => {
             element={
               <ProtectedRoute user={user}>
                 {user?.role === 'teacher' ? <QuestionPool /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher-analytics"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'teacher' ? <TeacherAnalytics /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Public Exam Route */}
+          <Route
+            path="/join-exam/:examId"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'student' ? <JoinExam /> : <Navigate to="/dashboard" />}
               </ProtectedRoute>
             }
           />

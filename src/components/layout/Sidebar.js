@@ -16,7 +16,9 @@ import {
   FaBookmark,
   FaFlag,
   FaChartLine,
-  FaQuestionCircle
+  FaQuestionCircle,
+  FaSearch,
+  FaGraduationCap
 } from 'react-icons/fa';
 import { auth } from '../../config/firebase';
 
@@ -30,6 +32,7 @@ const Sidebar = ({ role }) => {
     { icon: FaEye, label: 'View Submissions', path: '/view-submissions' },
     { icon: FaQuestionCircle, label: 'Question Pool', path: '/question-pool' },
     { icon: FaFlag, label: 'Flagged Questions', path: '/flagged-questions' },
+    { icon: FaChartBar, label: 'Analytics', path: '/teacher-analytics' },
     { icon: FaCog, label: 'Settings', path: '/settings' },
   ];
 
@@ -39,6 +42,7 @@ const Sidebar = ({ role }) => {
     { icon: FaChartBar, label: 'My Results', path: '/my-results' },
     { icon: FaBookmark, label: 'Bookmarked Questions', path: '/bookmarked' },
     { icon: FaChartLine, label: 'Analytics', path: '/analytics' },
+    { icon: FaSearch, label: 'Join Exam', path: '/join-exam' },
     { icon: FaCog, label: 'Settings', path: '/settings' },
   ];
 
@@ -56,7 +60,7 @@ const Sidebar = ({ role }) => {
     if (path === '/dashboard') {
       return location.pathname === '/dashboard';
     }
-    return location.pathname === path;
+    return location.pathname.startsWith(path);
   };
 
   return (
@@ -140,4 +144,4 @@ const Sidebar = ({ role }) => {
   );
 };
 
-export default Sidebar; 
+export default Sidebar;

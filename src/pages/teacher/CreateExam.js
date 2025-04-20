@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { FaPlus, FaTrash, FaClock, FaImage, FaInfoCircle, FaTimes, FaQuestionCircle } from 'react-icons/fa';
+import { FaPlus, FaTrash, FaClock, FaImage, FaInfoCircle, FaTimes, FaQuestionCircle, FaLink, FaCopy } from 'react-icons/fa';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, increment, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
 import Sidebar from '../../components/layout/Sidebar';
@@ -29,6 +29,8 @@ const CreateExam = () => {
   const [loadingPool, setLoadingPool] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [visibility, setVisibility] = useState('private');
+  const [publicLink, setPublicLink] = useState('');
 
   const categories = [
     'general',
@@ -115,22 +117,39 @@ const CreateExam = () => {
     }));
   };
 
+  const generatePublicLink = () => {
+    const timestamp = Date.now().toString(36);
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const uniqueLink = `${timestamp}-${randomStr}`;
+    setPublicLink(uniqueLink);
+  };
+
+  useEffect(() => {
+    if (visibility === 'public' && !publicLink) {
+      generatePublicLink();
+    }
+  }, [visibility, publicLink]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    setLoading(true);
+
     if (!auth.currentUser) {
       toast.error('You must be logged in to create an exam');
       navigate('/login');
+      setLoading(false);
       return;
     }
 
     if (!examData.title || !examData.timeLimit || !examData.passingScore) {
       toast.error('Please fill in all required fields');
+      setLoading(false);
       return;
     }
 
     if (!examData.questions || examData.questions.length === 0) {
       toast.error('Please add at least one question');
+      setLoading(false);
       return;
     }
 
@@ -139,63 +158,41 @@ const CreateExam = () => {
       const question = examData.questions[i];
       if (!question.question.trim()) {
         toast.error(`Question ${i + 1} text is required`);
+        setLoading(false);
         return;
       }
       if (question.options.some(opt => !opt.trim())) {
         toast.error(`All options in Question ${i + 1} must be filled`);
+        setLoading(false);
         return;
       }
     }
 
     try {
-      setLoading(true);
-
-      // Process the exam data
-      const processedQuestions = examData.questions.map(q => ({
-        question: q.question.trim(),
-        options: q.options.map(opt => opt.trim()),
-        correctAnswer: Number(q.correctAnswer),
-        points: Number(q.points),
-        imageUrl: q.imageUrl?.trim() || '',
-        explanation: q.explanation?.trim() || ''
-      }));
-
-      // Calculate total points
-      const totalPoints = processedQuestions.reduce((sum, q) => sum + q.points, 0);
-
-      // Create exam data object
-      const examToSubmit = {
-        title: examData.title.trim(),
-        description: examData.description.trim(),
-        timeLimit: Number(examData.timeLimit),
-        passingScore: Number(examData.passingScore),
-        instructions: examData.instructions.trim(),
-        category: examData.category,
-        difficulty: examData.difficulty,
-        isPublished: Boolean(examData.isPublished),
-        shuffleQuestions: Boolean(examData.shuffleQuestions),
-        allowReattempts: Boolean(examData.allowReattempts),
-        questions: processedQuestions,
-        totalPoints,
+      const examDataToSubmit = {
+        ...examData,
+        timeLimit: parseInt(examData.timeLimit),
+        passingScore: parseInt(examData.passingScore),
         createdBy: auth.currentUser.uid,
         createdAt: serverTimestamp(),
-        status: 'active'
+        status: 'active',
+        visibility,
+        publicLink: visibility === 'public' ? publicLink : '',
+        participants: [],
+        teacherId: auth.currentUser.uid
       };
 
-      // Add exam to Firestore
-      const examRef = await addDoc(collection(db, 'exams'), examToSubmit);
+      const docRef = await addDoc(collection(db, 'exams'), examDataToSubmit);
       
-      if (!examRef.id) {
+      if (!docRef.id) {
         throw new Error('Failed to create exam document');
       }
 
-      // Show success message and redirect
       toast.success('Exam created successfully!');
-      navigate('/dashboard');
-
+      navigate('/teacher/dashboard');
     } catch (error) {
       console.error('Error creating exam:', error);
-      toast.error(error.message || 'Failed to create exam. Please try again.');
+      toast.error(error.message || 'Failed to create exam');
     } finally {
       setLoading(false);
     }
@@ -603,6 +600,60 @@ const CreateExam = () => {
                     </label>
                   </div>
                 </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Visibility
+                  </label>
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="private"
+                        checked={visibility === 'private'}
+                        onChange={(e) => setVisibility(e.target.value)}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                      />
+                      <span className="ml-2">Private</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="public"
+                        checked={visibility === 'public'}
+                        onChange={(e) => setVisibility(e.target.value)}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                      />
+                      <span className="ml-2">Public</span>
+                    </label>
+                  </div>
+                </div>
+
+                {visibility === 'public' && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Public Link
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={`${window.location.origin}/join-exam/${publicLink}`}
+                        readOnly
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/join-exam/${publicLink}`);
+                          toast.success('Link copied to clipboard!');
+                        }}
+                        className="p-2 text-gray-600 hover:text-primary-600"
+                      >
+                        <FaCopy className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
