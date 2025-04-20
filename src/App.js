@@ -17,6 +17,7 @@ import MyResults from './pages/student/MyResults';
 import ViewSubmissions from './pages/teacher/ViewSubmissions';
 import BookmarkedExams from './pages/student/BookmarkedExams';
 import FlaggedQuestions from './pages/teacher/FlaggedQuestions';
+import Analytics from './pages/student/Analytics';
 
 // Components
 import Navbar from './components/layout/Navbar';
@@ -123,6 +124,14 @@ const App = () => {
             element={
               <ProtectedRoute user={user}>
                 {user?.role === 'student' ? <BookmarkedExams /> : <Navigate to="/dashboard" />}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute user={user}>
+                {user?.role === 'student' ? <Analytics /> : <Navigate to="/dashboard" />}
               </ProtectedRoute>
             }
           />

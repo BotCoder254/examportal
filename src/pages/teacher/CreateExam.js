@@ -13,23 +13,15 @@ const CreateExam = () => {
   const [examData, setExamData] = useState({
     title: '',
     description: '',
-    timeLimit: 60,
-    passingScore: 60,
+    timeLimit: '',
+    passingScore: '',
+    category: '',
+    difficulty: 'Medium',
     instructions: '',
-    category: 'general',
-    difficulty: 'medium',
     isPublished: false,
     shuffleQuestions: false,
-    questions: [
-      {
-        question: '',
-        options: ['', '', '', ''],
-        correctAnswer: 0,
-        explanation: '',
-        points: 1,
-        imageUrl: '',
-      },
-    ]
+    allowReattempts: false,
+    questions: []
   });
 
   const categories = [
@@ -176,6 +168,7 @@ const CreateExam = () => {
         difficulty: examData.difficulty,
         isPublished: Boolean(examData.isPublished),
         shuffleQuestions: Boolean(examData.shuffleQuestions),
+        allowReattempts: Boolean(examData.allowReattempts),
         questions: processedQuestions,
         totalPoints,
         createdBy: auth.currentUser.uid,
@@ -214,7 +207,16 @@ const CreateExam = () => {
         className="ml-80 p-8"
       >
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Create New Exam</h1>
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">Create Exam</h1>
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors duration-200 disabled:opacity-50"
+            >
+              {loading ? 'Creating...' : 'Create Exam'}
+            </button>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Exam Details */}
@@ -238,17 +240,14 @@ const CreateExam = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Category
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    name="category"
                     value={examData.category}
-                    onChange={(e) => setExamData({ ...examData, category: e.target.value })}
+                    onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category.charAt(0).toUpperCase() + category.slice(1)}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="e.g., Mathematics, Science, etc."
+                  />
                 </div>
 
                 <div>
@@ -300,6 +299,22 @@ const CreateExam = () => {
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Difficulty
+                  </label>
+                  <select
+                    name="difficulty"
+                    value={examData.difficulty}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Instructions
                   </label>
                   <textarea
@@ -307,44 +322,58 @@ const CreateExam = () => {
                     value={examData.instructions}
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    rows="3"
+                    rows="4"
                     placeholder="Enter exam instructions..."
                   />
                 </div>
 
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="isPublished"
-                    checked={examData.isPublished}
-                    onChange={handleInputChange}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="isPublished" className="ml-2 block text-sm text-gray-700">
-                    Publish immediately
-                  </label>
-                </div>
+                <div className="flex flex-wrap gap-6 mb-6">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="isPublished"
+                      name="isPublished"
+                      checked={examData.isPublished}
+                      onChange={(e) => handleInputChange({
+                        target: { name: 'isPublished', value: e.target.checked }
+                      })}
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="isPublished" className="text-sm text-gray-700">
+                      Publish exam immediately
+                    </label>
+                  </div>
 
-                <div className="md:col-span-2 flex items-center">
-                  <label className="flex items-center cursor-pointer">
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        name="shuffleQuestions"
-                        checked={examData.shuffleQuestions}
-                        onChange={handleInputChange}
-                        className="sr-only"
-                      />
-                      <div className={`block w-14 h-8 rounded-full transition-colors duration-200 ease-in-out ${examData.shuffleQuestions ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
-                      <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform duration-200 ease-in-out ${examData.shuffleQuestions ? 'transform translate-x-6' : ''}`}></div>
-                    </div>
-                    <span className="ml-3 text-gray-700 text-sm font-medium">Shuffle Questions</span>
-                  </label>
-                  <div className="ml-2 group relative">
-                    <FaInfoCircle className="text-gray-500 hover:text-gray-700 cursor-help" />
-                    <div className="hidden group-hover:block absolute z-10 w-64 p-2 text-sm bg-gray-800 text-white rounded shadow-lg -mt-1 ml-2">
-                      When enabled, questions will be presented in random order for each student
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="shuffleQuestions"
+                      name="shuffleQuestions"
+                      checked={examData.shuffleQuestions}
+                      onChange={(e) => handleInputChange({
+                        target: { name: 'shuffleQuestions', value: e.target.checked }
+                      })}
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="shuffleQuestions" className="text-sm text-gray-700">
+                      Shuffle questions for each student
+                    </label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="allowReattempts"
+                      name="allowReattempts"
+                      checked={examData.allowReattempts}
+                      onChange={(e) => handleInputChange({
+                        target: { name: 'allowReattempts', value: e.target.checked }
+                      })}
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="allowReattempts" className="text-sm text-gray-700">
+                      Allow students to reattempt exam
+                    </label>
                   </div>
                 </div>
               </div>
@@ -501,13 +530,6 @@ const CreateExam = () => {
                 className="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
-              >
-                {loading ? 'Creating...' : 'Create Exam'}
               </button>
             </div>
           </form>

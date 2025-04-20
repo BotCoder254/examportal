@@ -2,78 +2,100 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaArrowLeft, FaArrowRight, FaClock, FaFlag, FaBookmark } from 'react-icons/fa';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, query, getDocs, where, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
 import Sidebar from '../../components/layout/Sidebar';
 import { shuffleArray } from '../../utils/shuffle';
+import { toast } from 'react-hot-toast';
 
 const TakeExam = () => {
   const { examId } = useParams();
   const navigate = useNavigate();
   const [exam, setExam] = useState(null);
+  const [answers, setAnswers] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [timeLeft, setTimeLeft] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const [bookmarkedQuestions, setBookmarkedQuestions] = useState([]);
   const [flaggedQuestions, setFlaggedQuestions] = useState([]);
-  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
-  const [examStartTime, setExamStartTime] = useState(null);
-  const [shuffledQuestions, setShuffledQuestions] = useState([]);
   const [questionOrder, setQuestionOrder] = useState([]);
+  const [attemptNumber, setAttemptNumber] = useState(1);
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showTimeUpModal, setShowTimeUpModal] = useState(false);
   const [isTimerWarning, setIsTimerWarning] = useState(false);
+  const [shuffledQuestions, setShuffledQuestions] = useState([]);
 
   useEffect(() => {
     const fetchExam = async () => {
       try {
+        setLoading(true);
         const examDoc = await getDoc(doc(db, 'exams', examId));
-        if (examDoc.exists()) {
-          const examData = examDoc.data();
-          setExam(examData);
-          setTimeLeft(examData.timeLimit * 60);
-          setExamStartTime(new Date().toISOString());
-
-          // Handle question shuffling if enabled
-          if (examData.shuffleQuestions) {
-            const shuffled = shuffleArray(examData.questions);
-            setShuffledQuestions(shuffled);
-            const order = shuffled.map((q, index) => ({
-              shuffledIndex: index,
-              originalIndex: examData.questions.findIndex(
-                origQ => origQ.question === q.question
-              )
-            }));
-            setQuestionOrder(order);
-          } else {
-            setShuffledQuestions(examData.questions);
-            setQuestionOrder(examData.questions.map((_, index) => ({
-              shuffledIndex: index,
-              originalIndex: index
-            })));
-          }
-        } else {
-          navigate('/dashboard');
+        
+        if (!examDoc.exists()) {
+          setError('Exam not found');
+          return;
         }
+
+        const examData = examDoc.data();
+        
+        // Check if exam is published
+        if (!examData.isPublished) {
+          setError('This exam is not available');
+          return;
+        }
+
+        // Fetch previous attempts
+        const submissionsQuery = query(
+          collection(db, 'submissions'),
+          where('examId', '==', examId),
+          where('studentId', '==', auth.currentUser.uid)
+        );
+        const submissionsSnapshot = await getDocs(submissionsQuery);
+        const attempts = submissionsSnapshot.size;
+
+        // Check if reattempts are allowed
+        if (attempts > 0 && !examData.allowReattempts) {
+          setError('You have already attempted this exam');
+          return;
+        }
+
+        setAttemptNumber(attempts + 1);
+        
+        // Initialize question order and shuffled questions
+        let order;
+        let questions = [...examData.questions];
+        if (examData.shuffleQuestions) {
+          order = shuffleArray([...Array(questions.length).keys()]);
+          // Create shuffled questions array based on order
+          const shuffled = order.map(index => questions[index]);
+          setShuffledQuestions(shuffled);
+        } else {
+          order = [...Array(questions.length).keys()];
+          setShuffledQuestions(questions);
+        }
+        setQuestionOrder(order);
+        
+        // Initialize answers array
+        setAnswers(new Array(questions.length).fill(-1));
+        setTimeLeft(examData.timeLimit * 60);
+        setExam(examData);
       } catch (error) {
         console.error('Error fetching exam:', error);
+        setError('Failed to load exam');
       } finally {
         setLoading(false);
       }
     };
 
     fetchExam();
-  }, [examId, navigate]);
+  }, [examId]);
 
   useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0) return;
-
-    // Set warning state when 5 minutes or less remain
-    setIsTimerWarning(timeLeft <= 300);
+    if (!timeLeft || !exam) return;
 
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
+      setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
           handleTimeUp();
@@ -84,7 +106,7 @@ const TakeExam = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft]);
+  }, [timeLeft, exam]);
 
   const handleTimeUp = async () => {
     setShowTimeUpModal(true);
@@ -92,74 +114,70 @@ const TakeExam = () => {
   };
 
   const handleAnswer = (questionIndex, answerIndex) => {
-    const originalIndex = questionOrder[questionIndex].originalIndex;
-    setAnswers({
-      ...answers,
-      [originalIndex]: answerIndex,
-    });
+    const newAnswers = [...answers];
+    newAnswers[questionOrder[questionIndex]] = answerIndex;
+    setAnswers(newAnswers);
   };
 
   const toggleBookmark = (questionIndex) => {
-    const originalIndex = questionOrder[questionIndex].originalIndex;
-    setBookmarkedQuestions((prev) =>
-      prev.includes(originalIndex)
-        ? prev.filter((i) => i !== originalIndex)
-        : [...prev, originalIndex]
-    );
+    const actualIndex = questionOrder[questionIndex];
+    setBookmarkedQuestions(prev => {
+      if (prev.includes(actualIndex)) {
+        return prev.filter(i => i !== actualIndex);
+      }
+      return [...prev, actualIndex];
+    });
   };
 
   const toggleFlag = (questionIndex) => {
-    const originalIndex = questionOrder[questionIndex].originalIndex;
-    setFlaggedQuestions((prev) =>
-      prev.includes(originalIndex)
-        ? prev.filter((i) => i !== originalIndex)
-        : [...prev, originalIndex]
-    );
+    const actualIndex = questionOrder[questionIndex];
+    setFlaggedQuestions(prev => {
+      if (prev.includes(actualIndex)) {
+        return prev.filter(i => i !== actualIndex);
+      }
+      return [...prev, actualIndex];
+    });
   };
 
   const handleSubmit = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-
     try {
+      if (!exam) return;
+
+      // Calculate score
       let score = 0;
       let totalPoints = 0;
-      exam.questions.forEach((question, index) => {
-        totalPoints += question.points;
-        if (answers[index] === question.correctAnswer) {
+      answers.forEach((answer, index) => {
+        const question = exam.questions[index];
+        if (answer === question.correctAnswer) {
           score += question.points;
         }
+        totalPoints += question.points;
       });
 
       const finalScore = Math.round((score / totalPoints) * 100);
-      const endTime = new Date().toISOString();
 
+      // Create submission document
       const submissionData = {
         examId,
         studentId: auth.currentUser.uid,
         teacherId: exam.createdBy,
         answers,
         score: finalScore,
-        submittedAt: endTime,
-        startedAt: examStartTime,
         timeSpent: exam.timeLimit * 60 - timeLeft,
-        flaggedQuestions,
+        submittedAt: new Date().toISOString(),
         bookmarkedQuestions,
-        questionOrder: exam.shuffleQuestions ? questionOrder : null,
-        isAutoSubmitted: timeLeft === 0,
-        completedQuestions: Object.keys(answers).length,
-        totalQuestions: exam.questions.length
+        flaggedQuestions,
+        attemptNumber
       };
 
-      await setDoc(doc(db, 'submissions', `${auth.currentUser.uid}_${examId}`), submissionData);
+      await addDoc(collection(db, 'submissions'), submissionData);
 
-      // Only navigate if not showing time up modal
-      if (!showTimeUpModal) {
-        navigate('/my-results');
-      }
+      // Show success message and redirect
+      toast.success('Exam submitted successfully!');
+      navigate('/my-results');
     } catch (error) {
       console.error('Error submitting exam:', error);
-      setSubmitting(false);
+      toast.error('Failed to submit exam');
     }
   };
 
@@ -177,11 +195,34 @@ const TakeExam = () => {
     );
   }
 
-  // Use shuffledQuestions instead of exam.questions for rendering
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 text-lg mb-4">{error}</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!exam || !shuffledQuestions.length) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
   const currentQuestionData = shuffledQuestions[currentQuestion];
-  const isBookmarked = bookmarkedQuestions.includes(questionOrder[currentQuestion].originalIndex);
-  const isFlagged = flaggedQuestions.includes(questionOrder[currentQuestion].originalIndex);
-  const currentAnswer = answers[questionOrder[currentQuestion].originalIndex];
+  const isBookmarked = bookmarkedQuestions.includes(questionOrder[currentQuestion]);
+  const isFlagged = flaggedQuestions.includes(questionOrder[currentQuestion]);
+  const currentAnswer = answers[questionOrder[currentQuestion]];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -231,16 +272,16 @@ const TakeExam = () => {
                 className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-medium relative ${
                   currentQuestion === index
                     ? 'bg-primary-600 text-white'
-                    : answers[questionOrder[index].originalIndex] !== undefined
+                    : answers[questionOrder[index]] !== undefined
                     ? 'bg-green-100 text-green-800'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 {index + 1}
-                {bookmarkedQuestions.includes(questionOrder[index].originalIndex) && (
+                {bookmarkedQuestions.includes(questionOrder[index]) && (
                   <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full" />
                 )}
-                {flaggedQuestions.includes(questionOrder[index].originalIndex) && (
+                {flaggedQuestions.includes(questionOrder[index]) && (
                   <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-400 rounded-full" />
                 )}
               </button>
@@ -338,10 +379,10 @@ const TakeExam = () => {
           {currentQuestion === shuffledQuestions.length - 1 ? (
             <button
               onClick={() => setShowConfirmSubmit(true)}
-              disabled={submitting}
+              disabled={answers.length !== exam.questions.length}
               className="flex items-center px-6 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
             >
-              {submitting ? 'Submitting...' : 'Submit Exam'}
+              {answers.length !== exam.questions.length ? 'Submitting...' : 'Submit Exam'}
             </button>
           ) : (
             <button
@@ -373,7 +414,7 @@ const TakeExam = () => {
                   Submit Exam?
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  {Object.keys(answers).length} of {exam.questions.length} questions answered.
+                  {answers.length} of {exam.questions.length} questions answered.
                   {flaggedQuestions.length > 0 &&
                     ` You have ${flaggedQuestions.length} flagged questions.`}
                 </p>
@@ -386,10 +427,10 @@ const TakeExam = () => {
                   </button>
                   <button
                     onClick={handleSubmit}
-                    disabled={submitting}
+                    disabled={answers.length !== exam.questions.length}
                     className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
                   >
-                    {submitting ? 'Submitting...' : 'Confirm Submit'}
+                    {answers.length !== exam.questions.length ? 'Submitting...' : 'Confirm Submit'}
                   </button>
                 </div>
               </motion.div>
@@ -417,7 +458,7 @@ const TakeExam = () => {
                 </h3>
                 <p className="text-gray-600 mb-6">
                   Your exam has been automatically submitted.
-                  {Object.keys(answers).length} of {exam.questions.length} questions were answered.
+                  {answers.length} of {exam.questions.length} questions were answered.
                 </p>
                 <div className="flex justify-end">
                   <button

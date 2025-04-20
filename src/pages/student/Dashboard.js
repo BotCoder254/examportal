@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { FaBook, FaChartBar, FaClock, FaMedal, FaSearch } from 'react-icons/fa';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, getDoc, doc } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
 import Sidebar from '../../components/layout/Sidebar';
+import { toast } from 'react-hot-toast';
 
 const StudentDashboard = ({ isAvailableExamsPage }) => {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ const StudentDashboard = ({ isAvailableExamsPage }) => {
   const [exams, setExams] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBy, setFilterBy] = useState(isAvailableExamsPage ? 'available' : 'all');
+  const [reattempting, setReattempting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,20 +34,44 @@ const StudentDashboard = ({ isAvailableExamsPage }) => {
           .filter(exam => exam.isPublished); // Only show published exams
 
         // Fetch all submissions for the current student
-        const submissionsSnapshot = await getDocs(collection(db, 'submissions'));
+        const submissionsSnapshot = await getDocs(
+          query(
+            collection(db, 'submissions'),
+            where('studentId', '==', auth.currentUser.uid)
+          )
+        );
         const studentSubmissions = submissionsSnapshot.docs
           .map(doc => ({
             id: doc.id,
             ...doc.data()
-          }))
-          .filter(sub => sub.studentId === auth.currentUser.uid);
+          }));
+
+        // Group submissions by examId to get attempt counts
+        const attemptCounts = {};
+        studentSubmissions.forEach(sub => {
+          if (!attemptCounts[sub.examId]) {
+            attemptCounts[sub.examId] = 0;
+          }
+          attemptCounts[sub.examId]++;
+        });
 
         // Process exams with submission data
-        const processedExams = examsData.map(exam => ({
-          ...exam,
-          hasAttempted: studentSubmissions.some(s => s.examId === exam.id),
-          submission: studentSubmissions.find(s => s.examId === exam.id)
-        }));
+        const processedExams = examsData.map(exam => {
+          const submissions = studentSubmissions.filter(s => s.examId === exam.id);
+          const latestSubmission = submissions.length > 0 
+            ? submissions.reduce((latest, current) => 
+                new Date(current.submittedAt) > new Date(latest.submittedAt) ? current : latest
+              )
+            : null;
+
+          return {
+            ...exam,
+            hasAttempted: submissions.length > 0,
+            submission: latestSubmission,
+            attemptCount: attemptCounts[exam.id] || 0,
+            canReattempt: exam.allowReattempts && (!latestSubmission || latestSubmission.submittedAt)
+          };
+        });
 
         // Calculate statistics
         const completedExams = studentSubmissions.length;
@@ -64,6 +90,7 @@ const StudentDashboard = ({ isAvailableExamsPage }) => {
         setExams(processedExams);
       } catch (error) {
         console.error('Error fetching data:', error);
+        toast.error('Failed to load exams');
       } finally {
         setLoading(false);
       }
@@ -71,6 +98,50 @@ const StudentDashboard = ({ isAvailableExamsPage }) => {
 
     fetchData();
   }, []);
+
+  const handleReattempt = async (examId) => {
+    try {
+      setReattempting(true);
+      
+      // Fetch exam to check if reattempts are allowed
+      const examDoc = await getDoc(doc(db, 'exams', examId));
+      if (!examDoc.exists()) {
+        toast.error('Exam not found');
+        return;
+      }
+
+      const examData = examDoc.data();
+      if (!examData.allowReattempts) {
+        toast.error('Reattempts are not allowed for this exam');
+        return;
+      }
+
+      // Fetch previous attempts
+      const submissionsQuery = query(
+        collection(db, 'submissions'),
+        where('examId', '==', examId),
+        where('studentId', '==', auth.currentUser.uid)
+      );
+      const submissionsSnapshot = await getDocs(submissionsQuery);
+      
+      // Check if there's an unfinished attempt
+      const hasUnfinishedAttempt = submissionsSnapshot.docs.some(doc => 
+        !doc.data().submittedAt
+      );
+
+      if (hasUnfinishedAttempt) {
+        toast.error('You have an unfinished attempt for this exam');
+        return;
+      }
+
+      navigate(`/exam/${examId}`);
+    } catch (error) {
+      console.error('Error starting reattempt:', error);
+      toast.error('Failed to start exam reattempt');
+    } finally {
+      setReattempting(false);
+    }
+  };
 
   const statCards = [
     {
@@ -222,38 +293,53 @@ const StudentDashboard = ({ isAvailableExamsPage }) => {
                             <>
                               <span>•</span>
                               <span>
-                                Flagged: {exam.submission.flaggedQuestions?.length || 0}
+                                Attempts: {exam.attemptCount}
                               </span>
                               <span>•</span>
                               <span>
-                                Bookmarked: {exam.submission.bookmarkedQuestions?.length || 0}
+                                Best Score: {exam.submission.score}%
                               </span>
                             </>
                           )}
                         </div>
                       </div>
-                      {exam.hasAttempted ? (
-                        <div className="text-right">
-                          <div className={`text-lg font-bold mb-1 ${
-                            exam.submission.score >= exam.passingScore ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {exam.submission.score}%
+                      <div className="flex items-center space-x-4">
+                        {exam.hasAttempted ? (
+                          <div className="flex flex-col items-end">
+                            <div className={`text-lg font-bold mb-1 ${
+                              exam.submission.score >= exam.passingScore ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {exam.submission.score}%
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => navigate('/my-results')}
+                                className="text-sm text-primary-600 hover:text-primary-700"
+                              >
+                                View Results
+                              </button>
+                              {exam.canReattempt && (
+                                <button
+                                  onClick={() => handleReattempt(exam.id)}
+                                  disabled={reattempting}
+                                  className={`text-sm px-3 py-1 bg-secondary-600 text-white rounded hover:bg-secondary-700 transition-colors duration-200 disabled:opacity-50 ${
+                                    reattempting ? 'cursor-not-allowed' : 'cursor-pointer'
+                                  }`}
+                                >
+                                  {reattempting ? 'Starting...' : 'Retake Exam'}
+                                </button>
+                              )}
+                            </div>
                           </div>
+                        ) : (
                           <button
-                            onClick={() => navigate('/my-results')}
-                            className="text-sm text-primary-600 hover:text-primary-700"
+                            onClick={() => navigate(`/exam/${exam.id}`)}
+                            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors duration-200"
                           >
-                            View Results
+                            Start Exam
                           </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => navigate(`/exam/${exam.id}`)}
-                          className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors duration-200"
-                        >
-                          Start Exam
-                        </button>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 ))
