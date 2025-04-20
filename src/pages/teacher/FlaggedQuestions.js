@@ -21,78 +21,84 @@ const FlaggedQuestions = () => {
   useEffect(() => {
     const fetchFlaggedQuestions = async () => {
       try {
-        // Fetch all submissions with flagged questions
-        const submissionsSnapshot = await getDocs(collection(db, 'submissions'));
-        const flaggedSubmissions = submissionsSnapshot.docs
-          .map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }))
-          .filter(sub => sub.flaggedQuestions?.length > 0);
+        // Get all submissions where teacher is the current user
+        const submissionsQuery = query(
+          collection(db, 'submissions'),
+          where('teacherId', '==', auth.currentUser.uid)
+        );
+        const submissionsSnapshot = await getDocs(submissionsQuery);
+        const submissions = submissionsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
 
-        // Fetch all exams
-        const examsSnapshot = await getDocs(collection(db, 'exams'));
-        const examsData = examsSnapshot.docs.reduce((acc, doc) => {
+        // Get all exams created by the current user
+        const examsQuery = query(
+          collection(db, 'exams'),
+          where('createdBy', '==', auth.currentUser.uid)
+        );
+        const examsSnapshot = await getDocs(examsQuery);
+        const exams = examsSnapshot.docs.reduce((acc, doc) => {
           acc[doc.id] = { id: doc.id, ...doc.data() };
           return acc;
         }, {});
 
-        // Process and aggregate flagged questions data
+        // Process submissions to group flagged questions by exam
         const processedData = {};
-        flaggedSubmissions.forEach(submission => {
-          const exam = examsData[submission.examId];
-          if (!exam || exam.createdBy !== auth.currentUser.uid) return;
+        let totalFlagged = 0;
+        let uniqueExams = 0;
+        let maxFlags = 0;
+        let mostFlaggedQuestion = null;
 
-          if (!processedData[submission.examId]) {
-            processedData[submission.examId] = {
+        submissions.forEach(submission => {
+          if (!submission.flaggedQuestions?.length) return;
+
+          const examId = submission.examId;
+          const exam = exams[examId];
+          if (!exam) return;
+
+          if (!processedData[examId]) {
+            processedData[examId] = {
               exam,
+              submissions: [],
               flaggedQuestions: {},
-              totalFlags: 0,
-              submissions: []
+              totalFlags: 0
             };
+            uniqueExams++;
           }
 
+          // Add submission to the exam's data
+          processedData[examId].submissions.push(submission);
+
+          // Process flagged questions
           submission.flaggedQuestions.forEach(questionIndex => {
-            if (!processedData[submission.examId].flaggedQuestions[questionIndex]) {
-              processedData[submission.examId].flaggedQuestions[questionIndex] = {
-                question: exam.questions[questionIndex],
+            const question = exam.questions[questionIndex];
+            if (!question) return;
+
+            if (!processedData[examId].flaggedQuestions[questionIndex]) {
+              processedData[examId].flaggedQuestions[questionIndex] = {
+                question,
                 flagCount: 0,
                 submissions: []
               };
             }
-            processedData[submission.examId].flaggedQuestions[questionIndex].flagCount++;
-            processedData[submission.examId].flaggedQuestions[questionIndex].submissions.push({
+
+            processedData[examId].flaggedQuestions[questionIndex].flagCount++;
+            processedData[examId].flaggedQuestions[questionIndex].submissions.push({
               submissionId: submission.id,
               studentId: submission.studentId,
-              answer: submission.answers[questionIndex],
               submittedAt: submission.submittedAt
             });
-            processedData[submission.examId].totalFlags++;
-          });
 
-          processedData[submission.examId].submissions.push({
-            id: submission.id,
-            studentId: submission.studentId,
-            submittedAt: submission.submittedAt
-          });
-        });
+            processedData[examId].totalFlags++;
+            totalFlagged++;
 
-        // Calculate statistics
-        const totalFlagged = Object.values(processedData).reduce(
-          (sum, exam) => sum + exam.totalFlags, 0
-        );
-        const uniqueExams = Object.keys(processedData).length;
-        
-        let mostFlaggedQuestion = null;
-        let maxFlags = 0;
-        Object.values(processedData).forEach(examData => {
-          Object.entries(examData.flaggedQuestions).forEach(([index, data]) => {
-            if (data.flagCount > maxFlags) {
-              maxFlags = data.flagCount;
+            if (processedData[examId].flaggedQuestions[questionIndex].flagCount > maxFlags) {
+              maxFlags = processedData[examId].flaggedQuestions[questionIndex].flagCount;
               mostFlaggedQuestion = {
-                examTitle: examData.exam.title,
-                question: data.question.question,
-                flagCount: data.flagCount
+                examTitle: exam.title,
+                question: question.question,
+                flagCount: processedData[examId].flaggedQuestions[questionIndex].flagCount
               };
             }
           });

@@ -141,59 +141,52 @@ const TakeExam = () => {
 
   const handleSubmit = async () => {
     try {
-      if (!exam) return;
+      // Calculate scores and prepare grading data
+      let objectiveScore = 0;
+      let totalObjectiveQuestions = 0;
+      let totalSubjectiveQuestions = 0;
+      const gradedQuestions = {};
+      let needsManualGrading = false;
 
-      // Calculate score for objective questions
-      let score = 0;
-      let totalPoints = 0;
-      let objectiveQuestionsCount = 0;
-      let subjectiveQuestionsCount = 0;
-      let gradedQuestions = [];
-
-      answers.forEach((answer, index) => {
-        const question = exam.questions[index];
+      exam.questions.forEach((question, index) => {
         if (question.type === 'subjective') {
-          subjectiveQuestionsCount++;
-          gradedQuestions.push({
-            questionIndex: index,
-            score: null, // To be graded by teacher
-            maxPoints: question.points,
-            type: 'subjective',
-            answer: answer
-          });
+          totalSubjectiveQuestions++;
+          needsManualGrading = true;
         } else {
-          objectiveQuestionsCount++;
-          const isCorrect = answer === question.correctAnswer;
-          const questionScore = isCorrect ? question.points : 0;
-          score += questionScore;
-          totalPoints += question.points;
-          gradedQuestions.push({
-            questionIndex: index,
-            score: questionScore,
-            maxPoints: question.points,
-            type: 'objective',
-            isCorrect,
-            answer
-          });
+          totalObjectiveQuestions++;
+          const isCorrect = answers[questionOrder[index]] === question.correctAnswer;
+          if (isCorrect) {
+            objectiveScore += question.points || 1;
+          }
+          gradedQuestions[index] = {
+            score: isCorrect ? (question.points || 1) : 0,
+            maxScore: question.points || 1,
+            feedback: ''
+          };
         }
       });
 
-      // Calculate partial score for objective questions
-      const objectiveScore = totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
-      const needsManualGrading = subjectiveQuestionsCount > 0;
+      // Calculate final score as percentage
+      if (totalObjectiveQuestions > 0) {
+        objectiveScore = Math.round((objectiveScore / totalObjectiveQuestions) * 100);
+      }
+
+      // Map the bookmarked and flagged questions back to their original indices
+      const originalBookmarkedQuestions = bookmarkedQuestions.map(index => questionOrder[index]);
+      const originalFlaggedQuestions = flaggedQuestions.map(index => questionOrder[index]);
 
       // Create submission document
       const submissionData = {
         examId,
         studentId: auth.currentUser.uid,
         teacherId: exam.createdBy,
-        answers,
+        answers: answers.map((answer, i) => answers[questionOrder[i]]), // Map answers back to original order
         objectiveScore,
-        finalScore: needsManualGrading ? null : objectiveScore, // Only set final score if no manual grading needed
+        finalScore: needsManualGrading ? null : objectiveScore,
         timeSpent: exam.timeLimit * 60 - timeLeft,
         submittedAt: new Date().toISOString(),
-        bookmarkedQuestions,
-        flaggedQuestions,
+        bookmarkedQuestions: originalBookmarkedQuestions,
+        flaggedQuestions: originalFlaggedQuestions,
         attemptNumber,
         gradedQuestions,
         needsManualGrading,

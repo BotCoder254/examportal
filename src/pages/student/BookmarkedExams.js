@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, getDoc, doc } from 'firebase/firestore';
 import { auth, db } from '../../config/firebase';
 import { FaChevronDown, FaChevronUp, FaBookmark, FaFlag, FaClock } from 'react-icons/fa';
 import Sidebar from '../../components/layout/Sidebar';
@@ -20,40 +20,70 @@ const BookmarkedExams = () => {
   useEffect(() => {
     const fetchBookmarkedExams = async () => {
       try {
-        // Fetch all submissions for the current student
-        const submissionsSnapshot = await getDocs(collection(db, 'submissions'));
+        // Fetch all submissions for the current student that have bookmarked questions
+        const submissionsQuery = query(
+          collection(db, 'submissions'),
+          where('studentId', '==', auth.currentUser.uid)
+        );
+        const submissionsSnapshot = await getDocs(submissionsQuery);
         const studentSubmissions = submissionsSnapshot.docs
           .map(doc => ({
             id: doc.id,
             ...doc.data()
           }))
-          .filter(sub => sub.studentId === auth.currentUser.uid && sub.bookmarkedQuestions?.length > 0);
+          .filter(sub => sub.bookmarkedQuestions?.length > 0);
 
-        // Fetch all exams
-        const examsSnapshot = await getDocs(collection(db, 'exams'));
-        const examsData = examsSnapshot.docs.reduce((acc, doc) => {
-          acc[doc.id] = { id: doc.id, ...doc.data() };
+        // Fetch all exams for these submissions
+        const examIds = [...new Set(studentSubmissions.map(sub => sub.examId))];
+        const examPromises = examIds.map(examId => 
+          getDoc(doc(db, 'exams', examId))
+        );
+        const examSnapshots = await Promise.all(examPromises);
+        const examsData = examSnapshots.reduce((acc, examDoc) => {
+          if (examDoc.exists()) {
+            acc[examDoc.id] = { id: examDoc.id, ...examDoc.data() };
+          }
           return acc;
         }, {});
 
         // Combine submission data with exam data
         const bookmarkedData = studentSubmissions.map(submission => {
-          const exam = examsData[submission.examId] || {};
+          const exam = examsData[submission.examId];
+          if (!exam) return null;
+
+          // Map bookmarked questions to their actual questions from the exam
+          const bookmarkedQuestionsData = submission.bookmarkedQuestions
+            .map(questionIndex => {
+              const question = exam.questions[questionIndex];
+              if (!question) return null;
+              return {
+                index: questionIndex,
+                question: question.question,
+                options: question.options,
+                correctAnswer: question.correctAnswer,
+                points: question.points,
+                explanation: question.explanation,
+                imageUrl: question.imageUrl,
+                studentAnswer: submission.answers[questionIndex]
+              };
+            })
+            .filter(q => q !== null);
+
           return {
             id: submission.id,
-            ...submission,
-            exam: {
-              ...exam,
-              id: submission.examId
-            }
+            examId: submission.examId,
+            submittedAt: submission.submittedAt,
+            score: submission.score,
+            bookmarkedQuestions: bookmarkedQuestionsData,
+            exam
           };
-        });
+        }).filter(data => data !== null);
 
         // Calculate statistics
         const totalBookmarked = bookmarkedData.reduce((sum, data) => 
-          sum + (data.bookmarkedQuestions?.length || 0), 0);
+          sum + data.bookmarkedQuestions.length, 0);
         const completedBookmarked = bookmarkedData.length;
-        const scores = bookmarkedData.map(r => r.score || 0);
+        const scores = bookmarkedData.map(h => h.score || 0);
         const averageScore = scores.length > 0 
           ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) 
           : 0;
