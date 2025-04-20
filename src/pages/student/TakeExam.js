@@ -143,18 +143,44 @@ const TakeExam = () => {
     try {
       if (!exam) return;
 
-      // Calculate score
+      // Calculate score for objective questions
       let score = 0;
       let totalPoints = 0;
+      let objectiveQuestionsCount = 0;
+      let subjectiveQuestionsCount = 0;
+      let gradedQuestions = [];
+
       answers.forEach((answer, index) => {
         const question = exam.questions[index];
-        if (answer === question.correctAnswer) {
-          score += question.points;
+        if (question.type === 'subjective') {
+          subjectiveQuestionsCount++;
+          gradedQuestions.push({
+            questionIndex: index,
+            score: null, // To be graded by teacher
+            maxPoints: question.points,
+            type: 'subjective',
+            answer: answer
+          });
+        } else {
+          objectiveQuestionsCount++;
+          const isCorrect = answer === question.correctAnswer;
+          const questionScore = isCorrect ? question.points : 0;
+          score += questionScore;
+          totalPoints += question.points;
+          gradedQuestions.push({
+            questionIndex: index,
+            score: questionScore,
+            maxPoints: question.points,
+            type: 'objective',
+            isCorrect,
+            answer
+          });
         }
-        totalPoints += question.points;
       });
 
-      const finalScore = Math.round((score / totalPoints) * 100);
+      // Calculate partial score for objective questions
+      const objectiveScore = totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
+      const needsManualGrading = subjectiveQuestionsCount > 0;
 
       // Create submission document
       const submissionData = {
@@ -162,18 +188,28 @@ const TakeExam = () => {
         studentId: auth.currentUser.uid,
         teacherId: exam.createdBy,
         answers,
-        score: finalScore,
+        objectiveScore,
+        finalScore: needsManualGrading ? null : objectiveScore, // Only set final score if no manual grading needed
         timeSpent: exam.timeLimit * 60 - timeLeft,
         submittedAt: new Date().toISOString(),
         bookmarkedQuestions,
         flaggedQuestions,
-        attemptNumber
+        attemptNumber,
+        gradedQuestions,
+        needsManualGrading,
+        gradingStatus: needsManualGrading ? 'pending' : 'completed',
+        gradedAt: needsManualGrading ? null : new Date().toISOString()
       };
 
       await addDoc(collection(db, 'submissions'), submissionData);
 
-      // Show success message and redirect
-      toast.success('Exam submitted successfully!');
+      // Show appropriate success message
+      if (needsManualGrading) {
+        toast.success('Exam submitted successfully! Your final score will be available after teacher review.');
+      } else {
+        toast.success(`Exam submitted successfully! Your score: ${objectiveScore}%`);
+      }
+      
       navigate('/my-results');
     } catch (error) {
       console.error('Error submitting exam:', error);

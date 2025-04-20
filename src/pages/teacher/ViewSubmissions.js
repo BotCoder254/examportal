@@ -4,6 +4,7 @@ import { collection, query, where, getDocs, doc, updateDoc, getDoc } from 'fireb
 import { auth, db } from '../../config/firebase';
 import { FaChevronDown, FaChevronUp, FaUser, FaDownload, FaFilter, FaSearch, FaCheck, FaTimes, FaClock } from 'react-icons/fa';
 import Sidebar from '../../components/layout/Sidebar';
+import { toast } from 'react-hot-toast';
 
 const ViewSubmissions = () => {
   const [submissions, setSubmissions] = useState([]);
@@ -20,6 +21,8 @@ const ViewSubmissions = () => {
     passRate: 0,
     pendingReview: 0
   });
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [subjectiveGrades, setSubjectiveGrades] = useState({});
 
   useEffect(() => {
     fetchSubmissions();
@@ -100,6 +103,7 @@ const ViewSubmissions = () => {
       setSubmissions(groupedSubmissions);
     } catch (error) {
       console.error('Error fetching submissions:', error);
+      toast.error('Failed to fetch submissions');
     } finally {
       setLoading(false);
     }
@@ -210,6 +214,59 @@ const ViewSubmissions = () => {
 
     return filteredSubs.length > 0;
   });
+
+  const handleGradeChange = (questionIndex, score) => {
+    setSubjectiveGrades(prev => ({
+      ...prev,
+      [questionIndex]: Math.min(Math.max(0, Number(score)), selectedSubmission.gradedQuestions[questionIndex].maxPoints)
+    }));
+  };
+
+  const calculateFinalScore = (submission, grades) => {
+    let totalScore = 0;
+    let totalPoints = 0;
+
+    submission.gradedQuestions.forEach((question, index) => {
+      if (question.type === 'objective') {
+        totalScore += question.score;
+        totalPoints += question.maxPoints;
+      } else {
+        const subjectiveScore = grades[index] || 0;
+        totalScore += subjectiveScore;
+        totalPoints += question.maxPoints;
+      }
+    });
+
+    return totalPoints > 0 ? Math.round((totalScore / totalPoints) * 100) : 0;
+  };
+
+  const handleSubmitGrades = async () => {
+    try {
+      if (!selectedSubmission) return;
+
+      const updatedQuestions = selectedSubmission.gradedQuestions.map((question, index) => ({
+        ...question,
+        score: question.type === 'subjective' ? (subjectiveGrades[index] || 0) : question.score
+      }));
+
+      const finalScore = calculateFinalScore(selectedSubmission, subjectiveGrades);
+
+      await updateDoc(doc(db, 'submissions', selectedSubmission.id), {
+        gradedQuestions: updatedQuestions,
+        finalScore,
+        gradingStatus: 'completed',
+        gradedAt: new Date().toISOString()
+      });
+
+      toast.success('Grades submitted successfully');
+      setSelectedSubmission(null);
+      setSubjectiveGrades({});
+      fetchSubmissions();
+    } catch (error) {
+      console.error('Error submitting grades:', error);
+      toast.error('Failed to submit grades');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -581,6 +638,55 @@ const ViewSubmissions = () => {
                 </AnimatePresence>
               </motion.div>
             ))}
+          </div>
+        )}
+
+        {selectedSubmission && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+              <h2 className="text-xl font-bold mb-4">Grade Subjective Questions</h2>
+              
+              <div className="space-y-6">
+                {selectedSubmission.gradedQuestions
+                  .filter(q => q.type === 'subjective')
+                  .map((question, index) => (
+                    <div key={index} className="border rounded p-4">
+                      <p className="font-medium mb-2">Question {question.questionIndex + 1}</p>
+                      <p className="mb-2">Student's Answer: {question.answer}</p>
+                      <div className="flex items-center space-x-4">
+                        <label className="font-medium">Score:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={question.maxPoints}
+                          value={subjectiveGrades[question.questionIndex] || ''}
+                          onChange={(e) => handleGradeChange(question.questionIndex, e.target.value)}
+                          className="border rounded px-2 py-1 w-20"
+                        />
+                        <span className="text-gray-500">/ {question.maxPoints}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-4">
+                <button
+                  onClick={() => {
+                    setSelectedSubmission(null);
+                    setSubjectiveGrades({});
+                  }}
+                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmitGrades}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Submit Grades
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
